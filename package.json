@@ -1,0 +1,29 @@
+{
+  "name": "babel-plugin-reloop",
+  "version": "0.1.0",
+  "description": "Rewrite array iterating methods to plain loops",
+  "dependencies": {
+    "babel-core": "^5.6.0"
+  },
+  "main": "lib",
+  "devDependencies": {
+    "babel": "^5.6.0",
+    "babel-eslint": "^4.0.0",
+    "eslint": "^0.24.1",
+    "mocha": "^2.2.5"
+  },
+  "scripts": {
+    "build": "babel-plugin build",
+    "push": "babel-plugin publish",
+    "test": "mocha --compilers js:babel/register",
+    "lint": "eslint src"
+  },
+  "keywords": [
+    "babel-plugin",
+    "map",
+    "reduce",
+    "filter",
+    "every",
+    "some"
+  ]
+}
