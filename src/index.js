@@ -22,8 +22,8 @@ export function extractBody(fn, scope = fn.scope, visitor) {
       traverse(parent, visitor, s, this.state, this.parentPath);
     },
     'AssignmentExpression|UpdateExpression'(node, parent, s) {
-      var left = node.left;
-      var binding = scope.getOwnBinding( left.name );
+      let left = node.left;
+      let binding = scope.getOwnBinding( left.name );
 
       if (args.indexOf( left.name ) >= 0) {
         //console.log('warning: modifying parameter value!');
@@ -37,7 +37,6 @@ export function extractBody(fn, scope = fn.scope, visitor) {
       }
     }
   }), scope);
-
 
   return body;
 };
@@ -63,11 +62,10 @@ export default function ({ Plugin, types: t }) {
               var array = callee.get('object').node;
 
               var ref;
-              var decls = [
-                t.variableDeclarator(t.identifier(id.name), t.arrayExpression([]))
-              ];
 
-              id.typeAnnotation = t.genericTypeAnnotation({ type: 'Identifier', name: 'Array'});
+              scope.push({ id, init: t.arrayExpression([]) });
+
+              // id.typeAnnotation = t.genericTypeAnnotation({ type: 'Identifier', name: 'Array'});
 
               if (params.length < 1) {
                 params[0] = scope.generateDeclaredUidIdentifier('currentValue');
@@ -75,6 +73,10 @@ export default function ({ Plugin, types: t }) {
 
               if (params.length < 2) {
                 params[1] = scope.generateDeclaredUidIdentifier('index');
+              }
+
+              if (params.length < 3) {
+                params[2] = scope.generateDeclaredUidIdentifier('array');
               }
 
               const body = extractBody(fn, scope, {
@@ -86,26 +88,22 @@ export default function ({ Plugin, types: t }) {
                 },
                 ThisExpression(node) {
                   if (args[1] && !ref) {
-                    ref = scope.generateUidIdentifier('this');
-                    scope.push( { id: ref });
-                    decls.push(t.variableDeclarator(ref, args[1].node));
+                    ref = scope.generateDeclaredUidIdentifier('this');
+                    scope.push({ id: ref });
+                    return t.assignmentExpression('=', ref, args[1].node);
                   }
                   return ref || node;
                 },
               });
 
-              if (params.length > 2) {
-                fn.scope.rename( params[2].name, array.name );
-              }
-
               this.getStatementParent().insertBefore([
-                t.variableDeclaration('var', decls),
                 t.forStatement(
-                  t.assignmentExpression('=', params[0], t.memberExpression(array,
+                  t.assignmentExpression('=', params[0], t.memberExpression(
+                    t.assignmentExpression('=', params[2], array),
                     t.assignmentExpression('=', params[1], t.literal(0)),
                     true)),
-                  t.binaryExpression('<', params[1], t.memberExpression(array, t.identifier('length'))),
-                  t.assignmentExpression('=', params[0], t.memberExpression(array,
+                  t.binaryExpression('<', params[1], t.memberExpression(params[2], t.identifier('length'))),
+                  t.assignmentExpression('=', params[0], t.memberExpression(params[2],
                     t.updateExpression('++', params[1], true),
                     true)),
                   t.blockStatement(body)

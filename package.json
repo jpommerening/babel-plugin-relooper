@@ -13,10 +13,8 @@
     "mocha": "^2.2.5"
   },
   "scripts": {
-    "build": "babel-plugin build",
-    "push": "babel-plugin publish",
-    "test": "mocha --compilers js:babel/register",
-    "lint": "eslint src"
+    "prepublish": "babel-plugin build",
+    "test": "mocha --compilers js:babel/register"
   },
   "keywords": [
     "babel-plugin",
