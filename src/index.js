@@ -3,20 +3,23 @@ import { types, traverse } from 'babel-core';
 export function extractBody(fn, scope = fn.scope, visitor) {
   const body = fn.get('body');
   const args = [];
+  const params = fn.get('params');
 
-  // TODO: move binding for all params, because, well, we're modifying them
-  // and need to be sure not to modify the parent scope we're moving them to
+  for (let param of params) {
+    let name = param.node.name;
+    let id = scope.generateUid(name);
+    fn.scope.rename( name, id );
+    fn.scope.moveBindingTo( id, scope );
+    scope.push( { id: param.node } );
+  }
 
   body.traverse(Object.assign({}, visitor, {
     Identifier(node, parent, s) {
-      if (fn.scope.hasOwnBinding( node.name )) {
-        let name = node.name;
+      let name = node.name;
+
+      if (fn.scope.hasOwnBinding( name ) &&
+          fn.scope.getOwnBinding( name ).kind !== 'param') {
         let id = scope.generateUid(name);
-
-        if (fn.scope.getOwnBinding( name ).kind === 'param') {
-          args.push( id );
-        }
-
         fn.scope.rename( name, id );
         fn.scope.moveBindingTo( id, scope );
         scope.push( { id: node } );
@@ -28,7 +31,9 @@ export function extractBody(fn, scope = fn.scope, visitor) {
       let left = node.left;
       let binding = scope.getOwnBinding( left.name );
 
-      if (args.indexOf( left.name ) >= 0) {
+      // interestingly, this works as the binding retains its kind
+      // even when moved out of its previous scope
+      if (binding && binding.kind === 'param') {
         //console.log('warning: modifying parameter value!');
       }
 
