@@ -1,10 +1,13 @@
 import { types, traverse } from 'babel-core';
 
 export function extractBody(fn, scope = fn.scope, visitor) {
-  const body = [];
+  const body = fn.get('body');
   const args = [];
 
-  fn.get('body').traverse(Object.assign({}, visitor, {
+  // TODO: move binding for all params, because, well, we're modifying them
+  // and need to be sure not to modify the parent scope we're moving them to
+
+  body.traverse(Object.assign({}, visitor, {
     Identifier(node, parent, s) {
       if (fn.scope.hasOwnBinding( node.name )) {
         let name = node.name;
@@ -30,15 +33,10 @@ export function extractBody(fn, scope = fn.scope, visitor) {
       }
 
       traverse(parent, visitor, s, this.state, this.parentPath);
-    },
-    Statement: {
-      exit(node, parent) {
-        body.push(node);
-      }
     }
   }), scope);
 
-  return body;
+  return body.node.body;
 };
 
 export default function ({ Plugin, types: t }) {
@@ -65,8 +63,6 @@ export default function ({ Plugin, types: t }) {
 
               scope.push({ id, init: t.arrayExpression([]) });
 
-              // id.typeAnnotation = t.genericTypeAnnotation({ type: 'Identifier', name: 'Array'});
-
               if (params.length < 1) {
                 params[0] = scope.generateDeclaredUidIdentifier('currentValue');
               }
@@ -89,8 +85,7 @@ export default function ({ Plugin, types: t }) {
                 ThisExpression(node) {
                   if (args[1] && !ref) {
                     ref = scope.generateDeclaredUidIdentifier('this');
-                    scope.push({ id: ref });
-                    return t.assignmentExpression('=', ref, args[1].node);
+                    this.getStatementParent().insertBefore(t.expressionStatement(t.assignmentExpression('=', ref, args[1].node)));
                   }
                   return ref || node;
                 },
