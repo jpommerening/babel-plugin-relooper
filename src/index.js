@@ -2,39 +2,44 @@ import { types, traverse } from 'babel-core';
 
 export function extractBody(fn, scope = fn.scope, visitor) {
   const body = fn.get('body');
-  const args = [];
   const params = fn.get('params');
+
+  function moveNodeBinding(node) {
+    const name = node.name;
+    const id = scope.generateUid(name);
+    fn.scope.rename(name, id);
+    fn.scope.moveBindingTo(id, scope);
+    scope.push({ id: node });
+  }
 
   for (let param of params) {
     let name = param.node.name;
-    let id = scope.generateUid(name);
-    fn.scope.rename( name, id );
-    fn.scope.moveBindingTo( id, scope );
-    scope.push( { id: param.node } );
+    moveNodeBinding(param.node);
   }
 
   body.traverse(Object.assign({}, visitor, {
     Identifier(node, parent, s) {
-      let name = node.name;
+      const name = node.name;
+      const binding = fn.scope.getOwnBinding(name);
 
-      if (fn.scope.hasOwnBinding( name ) &&
-          fn.scope.getOwnBinding( name ).kind !== 'param') {
-        let id = scope.generateUid(name);
-        fn.scope.rename( name, id );
-        fn.scope.moveBindingTo( id, scope );
-        scope.push( { id: node } );
+      if (name === 'arguments') {
+        console.log('ARGHHHHSSS');
+      }
+
+      if (binding && binding.kind !== 'param') {
+        moveNodeBinding(node);
       }
 
       traverse(parent, visitor, s, this.state, this.parentPath);
     },
     'AssignmentExpression|UpdateExpression'(node, parent, s) {
-      let left = node.left;
-      let binding = scope.getOwnBinding( left.name );
+      const name = node.left.name;
+      const binding = scope.getOwnBinding(name);
 
       // interestingly, this works as the binding retains its kind
       // even when moved out of its previous scope
       if (binding && binding.kind === 'param') {
-        //console.log('warning: modifying parameter value!');
+        // TODO
       }
 
       traverse(parent, visitor, s, this.state, this.parentPath);
@@ -50,67 +55,59 @@ export default function ({ Plugin, types: t }) {
     visitor: {
       CallExpression: {
         exit(node, parent, scope) {
-          var callee = this.get('callee');
-          var args = this.get('arguments');
+          const callee = this.get('callee');
+          const args = this.get('arguments');
+          const object = callee.get('object');
 
           if (callee.isMemberExpression({ computed: false}) &&
-              callee.get('object').isGenericType('Array') &&
+              object.isGenericType('Array') &&
               args[0].isFunctionExpression()) {
 
-            var fn = args[0];
-            var params  = fn.scope.block.params;
+            const callback = args[0];
+            const thisArg = args[1];
+            const params  = callback.scope.block.params;
+            const statementParent = this.getStatementParent();
 
             if (callee.get('property').isIdentifier({ name: 'map' })) {
-              var id = scope.generateUidIdentifierBasedOnNode(node);
-              var array = callee.get('object').node;
+              const id = scope.generateUidIdentifierBasedOnNode(node);
+              let ref;
 
-              var ref;
+              const currentValue = params[0] || scope.generateDeclaredUidIdentifier('currentValue');
+              const index = params[1] || scope.generateDeclaredUidIdentifier('index');
+              const array = params[2] || scope.generateDeclaredUidIdentifier('array');
 
               scope.push({ id, init: t.arrayExpression([]) });
 
-              if (params.length < 1) {
-                params[0] = scope.generateDeclaredUidIdentifier('currentValue');
-              }
-
-              if (params.length < 2) {
-                params[1] = scope.generateDeclaredUidIdentifier('index');
-              }
-
-              if (params.length < 3) {
-                params[2] = scope.generateDeclaredUidIdentifier('array');
-              }
-
-              const body = extractBody(fn, scope, {
+              const body = extractBody(callback, scope, {
                 ReturnStatement(node, parent) {
                   return [
-                    t.expressionStatement(t.assignmentExpression('=', t.memberExpression(id, params[1], true), node.argument)),
+                    t.expressionStatement(t.assignmentExpression('=', t.memberExpression(id, index, true), node.argument)),
                     t.continueStatement()
                   ];
                 },
                 ThisExpression(node) {
-                  if (args[1] && !ref) {
+                  if (thisArg && !ref) {
                     ref = scope.generateDeclaredUidIdentifier('this');
-                    this.getStatementParent().insertBefore(t.expressionStatement(t.assignmentExpression('=', ref, args[1].node)));
+                    statementParent.insertBefore(t.expressionStatement(t.assignmentExpression('=', ref, thisArg.node)));
                   }
                   return ref || node;
                 },
               });
 
-              this.getStatementParent().insertBefore([
+              statementParent.insertBefore([
                 t.forStatement(
-                  t.assignmentExpression('=', params[0], t.memberExpression(
-                    t.assignmentExpression('=', params[2], array),
-                    t.assignmentExpression('=', params[1], t.literal(0)),
-                    true)),
-                  t.binaryExpression('<', params[1], t.memberExpression(params[2], t.identifier('length'))),
-                  t.assignmentExpression('=', params[0], t.memberExpression(params[2],
-                    t.updateExpression('++', params[1], true),
-                    true)),
-                  t.blockStatement(body)
+                  t.assignmentExpression('=', index, t.literal(0)),
+                  t.binaryExpression('<', index, t.memberExpression(object.node, t.identifier('length'))),
+                  t.updateExpression('++', index, true),
+                  t.blockStatement([
+                    t.expressionStatement(t.sequenceExpression([
+                      t.assignmentExpression('=', currentValue, t.memberExpression(object.node, index, true)),
+                      t.assignmentExpression('=', array, object.node)
+                    ])),
+                  ].concat(body))
                 )
               ]);
-              this.replaceWith(id);
-              return;
+              return id;
             }
           }
           return node;
